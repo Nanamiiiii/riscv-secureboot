@@ -1,0 +1,7 @@
+/target
+*.der
+*.key
+*.bin
+*.dts
+/.direnv
+/result

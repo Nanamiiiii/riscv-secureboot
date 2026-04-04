@@ -1,0 +1,22 @@
+[package]
+name = "image-signing-tool"
+version = "0.1.0"
+edition = "2021"
+authors = ["Akihiro Saiki <misly.lx00@gmail.com>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.1.4", features = ["derive", "env"] }
+colored = "3.1.1"
+dialoguer = "0.12.0"
+hex = "0.4.3"
+wolfssl = { version = "0.1.0", path = "lib/wolfssl" }
+
+[[bin]]
+name = "secbimg"
+path = "src/secbimg.rs"
+
+[[bin]]
+name = "keytool"
+path = "src/keytool.rs"

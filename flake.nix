@@ -1,0 +1,69 @@
+{
+  description = "Rust project with C bindings (via bindgen / cc crate)";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-utils.url = "github:numtide/flake-utils";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs =
+    {
+      self,
+      nixpkgs,
+      rust-overlay,
+      flake-utils,
+      treefmt-nix,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs { inherit system overlays; };
+
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [
+            "rust-src"
+            "rustfmt"
+            "clippy"
+            "llvm-tools-preview"
+            "rust-analyzer"
+          ];
+        };
+
+        wolfssl-src = pkgs.callPackage ./nix/wolfssl-src.nix { };
+
+        signingTool = pkgs.callPackage ./nix/signtool.nix {
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = rustToolchain;
+            rustc = rustToolchain;
+          };
+          inherit wolfssl-src;
+          src = ./signtool/.;
+        };
+      in
+      {
+        packages.signtool = signingTool;
+
+        devShells.default = pkgs.mkShell rec {
+          inherit (signingTool) buildInputs nativeBuildInputs LIBCLANG_PATH;
+          RUST_BACKTRACE = "1";
+          PKG_CONFIG_PATH = pkgs.lib.makeSearchPathOutput "dev" "lib/pkgconfig" buildInputs;
+        };
+
+        formatter = treefmt-nix.lib.mkWrapper pkgs {
+          projectRootFile = "flake.nix";
+          programs.nixfmt.enable = true;
+          programs.rustfmt.enable = true;
+        };
+      }
+    );
+}
