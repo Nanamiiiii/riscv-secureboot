@@ -41,7 +41,7 @@
 
         wolfssl-src = pkgs.callPackage ./nix/wolfssl-src.nix { };
 
-        signingTool = pkgs.callPackage ./nix/signtool.nix {
+        signtool = pkgs.callPackage ./nix/signtool.nix {
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
@@ -49,12 +49,16 @@
           inherit wolfssl-src;
           src = ./signtool/.;
         };
+
+        opensbi-riscv64 = pkgs.pkgsCross.riscv64.callPackage ./nix/opensbi-cross.nix { };
       in
       {
-        packages.signtool = signingTool;
+        packages = {
+          inherit signtool opensbi-riscv64;
+        };
 
         devShells.default = pkgs.mkShell rec {
-          inherit (signingTool) buildInputs nativeBuildInputs LIBCLANG_PATH;
+          inherit (signtool) buildInputs nativeBuildInputs LIBCLANG_PATH;
           RUST_BACKTRACE = "1";
           PKG_CONFIG_PATH = pkgs.lib.makeSearchPathOutput "dev" "lib/pkgconfig" buildInputs;
         };
