@@ -5,3 +5,4 @@
 *.dts
 /.direnv
 /result
+*.dtb

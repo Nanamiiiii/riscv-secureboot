@@ -29,19 +29,18 @@ stdenv.mkDerivation (finalAttrs: {
     "I=$(out)"
   ];
 
-  makeFlags =
-    [
-      "PLATFORM=${withPlatform}"
-    ]
-    ++ lib.optionals (stdenv.cc.targetPrefix != "") [
-      "CROSS_COMPILE=${stdenv.cc.targetPrefix}"
-    ]
-    ++ lib.optionals (withPayload != null) [
-      "FW_PAYLOAD_PATH=${withPayload}"
-    ]
-    ++ lib.optionals (withFDT != null) [
-      "FW_FDT_PATH=${withFDT}"
-    ];
+  makeFlags = [
+    "PLATFORM=${withPlatform}"
+  ]
+  ++ lib.optionals (stdenv.cc.targetPrefix != "") [
+    "CROSS_COMPILE=${stdenv.cc.targetPrefix}"
+  ]
+  ++ lib.optionals (withPayload != null) [
+    "FW_PAYLOAD_PATH=${withPayload}"
+  ]
+  ++ lib.optionals (withFDT != null) [
+    "FW_FDT_PATH=${withFDT}"
+  ];
 
   enableParallelBuilding = true;
 
@@ -49,4 +48,3 @@ stdenv.mkDerivation (finalAttrs: {
   dontPatchELF = true;
 
 })
-

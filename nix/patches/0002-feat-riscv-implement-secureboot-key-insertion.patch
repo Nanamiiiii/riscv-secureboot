@@ -1,0 +1,240 @@
+From 783034be909c18a144917565d381bc235a9eb4a9 Mon Sep 17 00:00:00 2001
+From: Akihiro Saiki <sk@myuu.dev>
+Date: Fri, 3 Apr 2026 19:06:28 +0900
+Subject: [PATCH 2/2] feat(riscv): implement secureboot key insertion
+
+---
+ hw/riscv/virt.c         | 133 ++++++++++++++++++++++++++++++++++++++++
+ include/hw/riscv/virt.h |  16 +++++
+ 2 files changed, 149 insertions(+)
+
+diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c
+index 17909206c7..3f4dd5a2ec 100644
+--- a/hw/riscv/virt.c
++++ b/hw/riscv/virt.c
+@@ -1153,6 +1153,35 @@ static void finalize_fdt(RISCVVirtState *s)
+     create_fdt_rtc(s, irq_mmio_phandle);
+ }
+ 
++static void virt_fdt_add_keyfile_node(RISCVVirtState *s, void *fdt)
++{
++    const char *node_path = "/secureboot";
++
++    if (!s->key_data || s->key_size == 0 || s->key_algo == SECUREBOOT_KEY_NONE) {
++        return;
++    }
++
++    if (s->key_size != secureboot_key_size[s->key_algo]) {
++        error_report("keyfile: ed25519 publickey should be %lu bytes"
++                     "(%zu bytes passed)",
++                     secureboot_key_size[s->key_algo], s->key_size);
++        exit(1);
++    }
++
++    qemu_fdt_add_subnode(fdt, node_path);
++    qemu_fdt_setprop(fdt, node_path, "pubkey",
++                     s->key_data, (int)s->key_size);
++    qemu_fdt_setprop_cell(fdt, node_path, "pubkey-len", (uint32_t)s->key_size);
++    switch (s->key_algo) {
++    case SECUREBOOT_KEY_ED25519:
++        qemu_fdt_setprop_string(fdt, node_path, "algo", "ed25519");
++        break;
++    default:
++        qemu_fdt_setprop_string(fdt, node_path, "algo", "none");
++        break;
++    }
++}
++
+ static void create_fdt(RISCVVirtState *s)
+ {
+     MachineState *ms = MACHINE(s);
+@@ -1196,6 +1225,8 @@ static void create_fdt(RISCVVirtState *s)
+     create_fdt_flash(s);
+     create_fdt_fw_cfg(s);
+     create_fdt_pmu(s);
++
++    virt_fdt_add_keyfile_node(s, ms->fdt);
+ }
+ 
+ static inline DeviceState *gpex_pcie_init(MemoryRegion *sys_mem,
+@@ -1428,6 +1459,30 @@ static void virt_build_smbios(RISCVVirtState *s)
+     }
+ }
+ 
++static bool virt_load_keyfile(RISCVVirtState *s, Error **errp)
++{
++    GError *gerr = NULL;
++    gchar *data = NULL;
++    gsize len = 0;
++
++    if (!s->key_file) return true;
++
++    if (!g_file_get_contents(s->key_file, &data, &len, &gerr)) {
++        error_setg(errp, "failed to read keyfile %s: %s", s->key_file, gerr->message);
++        return false;
++    }
++
++    if (len == 0) {
++        error_setg(errp, "empty keyfile: %s", s->key_file);
++        g_free(data);
++        return false;
++    }
++
++    s->key_data = (uint8_t *)data;
++    s->key_size = (size_t)len;
++    return true;
++}
++
+ static void virt_machine_done(Notifier *notifier, void *data)
+ {
+     RISCVVirtState *s = container_of(notifier, RISCVVirtState,
+@@ -1548,6 +1603,10 @@ static void virt_machine_init(MachineState *machine)
+         exit(1);
+     }
+ 
++    if (!virt_load_keyfile(s, &error_fatal)) {
++        return;
++    }
++
+     /* Initialize sockets */
+     mmio_irqchip = virtio_irqchip = pcie_irqchip = NULL;
+     for (i = 0; i < socket_count; i++) {
+@@ -1756,6 +1815,18 @@ static void virt_machine_instance_init(Object *obj)
+     s->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
+     s->acpi = ON_OFF_AUTO_AUTO;
+     s->iommu_sys = ON_OFF_AUTO_AUTO;
++
++    s->key_file = NULL;
++    s->key_data = NULL;
++    s->key_size = 0;
++}
++
++static void virt_machine_instance_finalize(Object *obj)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++
++    g_free(s->key_file);
++    g_free(s->key_data);
+ }
+ 
+ static char *virt_get_aia_guests(Object *obj, Error **errp)
+@@ -1872,6 +1943,56 @@ static void virt_set_acpi(Object *obj, Visitor *v, const char *name,
+     visit_type_OnOffAuto(v, name, &s->acpi, errp);
+ }
+ 
++static char *virt_get_keyfile(Object *obj, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++    return g_strdup(s->key_file);
++}
++
++static void virt_set_keyfile(Object *obj, const char *val, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++
++    if (val && val[0] == '\0') {
++        error_setg(errp, "empty string is not acceptable for keyfile");
++        return;
++    }
++
++    g_free(s->key_file);
++    s->key_file = g_strdup(val);
++}
++
++static char *virt_get_keyalgo(Object *obj, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++    const char *val;
++
++    switch (s->key_algo) {
++    case SECUREBOOT_KEY_ED25519:
++        val = "ed25519";
++        break;
++    default:
++        val = "none";
++        break;
++    };
++
++    return g_strdup(val);
++}
++
++static void virt_set_keyalgo(Object *obj, const char *val, Error **errp)
++{
++    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
++
++    if (!strcmp(val, "none")) {
++        s->key_algo = SECUREBOOT_KEY_NONE;
++    } else if (!strcmp(val, "ed25519")) {
++        s->key_algo = SECUREBOOT_KEY_ED25519;
++    } else {
++        error_setg(errp, "Invalid secureboot key algorithm");
++        error_append_hint(errp, "Valid values are none and ed25519\n");
++    }
++}
++
+ static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
+                                                         DeviceState *dev)
+ {
+@@ -1978,6 +2099,17 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
+                               NULL, NULL);
+     object_class_property_set_description(oc, "iommu-sys",
+                                           "Enable IOMMU platform device");
++    object_class_property_add_str(oc, "keyfile",
++                                  virt_get_keyfile,
++                                  virt_set_keyfile);
++    object_class_property_set_description(oc, "keyfile",
++                                          "Path to the keyfile to be embedded"
++                                          "into the devicetree for secureboot");
++    object_class_property_add_str(oc, "keyalgo",
++                                  virt_get_keyalgo,
++                                  virt_set_keyalgo);
++    object_class_property_set_description(oc, "keyalgo",
++                                          "Algorithm used for secureboot key");
+ }
+ 
+ static const TypeInfo virt_machine_typeinfo = {
+@@ -1986,6 +2118,7 @@ static const TypeInfo virt_machine_typeinfo = {
+     .class_init = virt_machine_class_init,
+     .instance_init = virt_machine_instance_init,
+     .instance_size = sizeof(RISCVVirtState),
++    .instance_finalize = virt_machine_instance_finalize,
+     .interfaces = (const InterfaceInfo[]) {
+          { TYPE_HOTPLUG_HANDLER },
+          { }
+diff --git a/include/hw/riscv/virt.h b/include/hw/riscv/virt.h
+index 7b4c2c8b7d..5da76033da 100644
+--- a/include/hw/riscv/virt.h
++++ b/include/hw/riscv/virt.h
+@@ -41,6 +41,16 @@ typedef enum RISCVVirtAIAType {
+     VIRT_AIA_TYPE_APLIC_IMSIC,
+ } RISCVVirtAIAType;
+ 
++typedef enum SecureBootKeyAlgo {
++    SECUREBOOT_KEY_NONE = 0,
++    SECUREBOOT_KEY_ED25519,
++} SecureBootKeyAlgo;
++
++static const size_t secureboot_key_size[] = {
++    [SECUREBOOT_KEY_NONE] = 0,
++    [SECUREBOOT_KEY_ED25519] = 32,
++};
++
+ struct RISCVVirtState {
+     /*< private >*/
+     MachineState parent;
+@@ -64,6 +74,12 @@ struct RISCVVirtState {
+     struct GPEXHost *gpex_host;
+     OnOffAuto iommu_sys;
+     uint16_t pci_iommu_bdf;
++
++    /* Secure Boot Key */
++    char *key_file;
++    uint8_t *key_data;
++    size_t key_size;
++    SecureBootKeyAlgo key_algo;
+ };
+ 
+ enum {
+-- 
+2.53.0
+

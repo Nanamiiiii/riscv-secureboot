@@ -51,10 +51,20 @@
         };
 
         opensbi-riscv64 = pkgs.pkgsCross.riscv64.callPackage ./nix/opensbi-cross.nix { };
+
+        qemu-secureboot-riscv64 = pkgs.callPackage ./nix/qemu-secureboot.nix { inherit pkgs; };
       in
       {
         packages = {
-          inherit signtool opensbi-riscv64;
+          inherit signtool opensbi-riscv64 qemu-secureboot-riscv64;
+          default = pkgs.symlinkJoin {
+            name = "secureboot-qemu";
+            paths = [
+              signtool
+              opensbi-riscv64
+              qemu-secureboot-riscv64
+            ];
+          };
         };
 
         devShells.default = pkgs.mkShell rec {
