@@ -59,6 +59,7 @@
 
         u-boot-secure = {
           qemu = inputs.u-boot-secure.packages.${system}.uboot-riscv64-qemu;
+          qemu-ubuntu = inputs.u-boot-secure.packages.${system}.uboot-riscv64-qemu-ubuntu;
         };
 
         rootfs = pkgs.pkgsCross.riscv64.callPackage ./nix/rootfs.nix {
@@ -75,6 +76,15 @@
             ;
           opensbi = opensbi-riscv64;
           u-boot-secure = u-boot-secure.qemu;
+        };
+
+        loader-signed-ubuntu = pkgs.callPackage ./nix/loader-signed.nix {
+          inherit
+            signtool
+            signingKeys
+            ;
+          opensbi = opensbi-riscv64;
+          u-boot-secure = u-boot-secure.qemu-ubuntu;
         };
 
         run-qemu = pkgs.writeShellScriptBin "run-qemu" ''
@@ -94,6 +104,30 @@
             -device virtio-net-device,netdev=net0 \
             -device virtio-rng-pci
         '';
+
+        create-ubuntu-img = pkgs.callPackage ./nix/create-ubuntu-img.nix {
+          inherit
+            signtool
+            signingKeys
+            ;
+        };
+
+        run-ubuntu = pkgs.writeShellScriptBin "run-ubuntu" ''
+          image=./ubuntu-24.04.4-preinstalled-server-riscv64.img
+
+          if [ ! -f "$image" ]; then
+            ${create-ubuntu-img}/bin/create-ubuntu-img
+          fi
+
+          ${qemu-secureboot-riscv64}/bin/qemu-system-riscv64 -cpu rva23s64 -smp cpus=2 -m 4G -nographic \
+            -machine virt,keyfile=${signingKeys}/keys/ed25519_pub_nix.key,keyalgo=ed25519 \
+            -bios ${loader-signed-ubuntu}/images/u-boot-spl.bin \
+            -device loader,file=${loader-signed-ubuntu}/images/signed-loader.bin,addr=0x80200000 \
+            -drive file="$image",format=raw,if=virtio \
+            -netdev user,id=net0 \
+            -device virtio-net-device,netdev=net0 \
+            -device virtio-rng-pci
+        '';
       in
       {
         packages = {
@@ -102,11 +136,14 @@
             signingKeys
             opensbi-riscv64
             qemu-secureboot-riscv64
+            u-boot-secure
             rootfs
             loader-signed
+            loader-signed-ubuntu
             run-qemu
             ;
-          default = pkgs.symlinkJoin {
+          default = run-qemu;
+          all-qemu = pkgs.symlinkJoin {
             name = "secureboot-qemu";
             paths = [
               signtool
@@ -117,6 +154,18 @@
               rootfs
               loader-signed
               run-qemu
+            ];
+          };
+          all-qemu-ubuntu = pkgs.symlinkJoin {
+            name = "secureboot-qemu-ubuntu";
+            paths = [
+              signtool
+              signingKeys
+              opensbi-riscv64
+              qemu-secureboot-riscv64
+              u-boot-secure.qemu-ubuntu
+              loader-signed-ubuntu
+              run-ubuntu
             ];
           };
         };
