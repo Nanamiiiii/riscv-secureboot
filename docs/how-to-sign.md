@@ -83,5 +83,5 @@ Like a FIT-image, multiple images can be combined.
 secbimg union \
      -i firmware-signed.bin \
      -i loader-signed.bin \
-     -k ed25519_NAME.key -o signed-loader.bin
+     -k ed25519_NAME.key -o combined.bin
 ```
