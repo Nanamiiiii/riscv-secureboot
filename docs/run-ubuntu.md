@@ -37,11 +37,6 @@ This automatically downloads the Ubuntu image and signs the kernel.
 
 4. Sign kernel and initramfs
    ```bash
-   secbimg create \
-     -i u-boot-nodtb.bin \
-     -o u-boot-signed.bin \
-     -a sha3 -s ed25519 -k ed25519_ubuntu.key
-
    sudo secbimg create \
      -i $tmpdir/mnt/boot/vmlinuz \
      -o $tmpdir/mnt/boot/vmlinuz-signed \
