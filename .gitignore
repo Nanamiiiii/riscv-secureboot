@@ -7,4 +7,5 @@
 /result
 *.dtb
 *.img
+*.img.xz
 *.qcow2
