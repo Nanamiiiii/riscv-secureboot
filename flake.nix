@@ -141,6 +141,7 @@
             loader-signed
             loader-signed-ubuntu
             run-qemu
+            run-ubuntu
             ;
           default = run-qemu;
           all-qemu = pkgs.symlinkJoin {
