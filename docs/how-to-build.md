@@ -27,7 +27,7 @@ nix build .#u-boot-secure.qemu-ubuntu
 
 Build manually:
 ```bash
-git clone https://github.com/Nanamiiiii/u-boot-secure.git
+git clone --recursive https://github.com/Nanamiiiii/u-boot-secure.git
 cd u-boot-secure
 CROSS_COMPILE=riscv64-unknown-linux-gnu- make qemu-riscv64_spl_sb_seq_defconfig
 CROSS_COMPILE=riscv64-unknown-linux-gnu- make
